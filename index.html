@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<title>Suivi trains fluide</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<style>
+  html, body, #map { height: 100%; margin: 0; }
+  #status {
+    position: absolute;
+    top: 8px; left: 8px;
+    background: rgba(255 255 255 / 0.9);
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-family: sans-serif;
+    font-size: 14px;
+    z-index: 1000;
+    box-shadow: 0 0 5px rgba(0,0,0,0.2);
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+<div id="status">Chargement des données...</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+  const map = L.map('map').setView([48.8566, 2.3522], 11);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap'
+  }).addTo(map);
+
+  const stations = [
+    { name: "Bagneux - Lucie Aubrac", lat: 48.80354822259104, lon: 2.317458362049886 },
+    { name: "Barbara", lat: 48.8097987811254, lon: 2.3174174096489284 },
+    { name: "Mairie de Montrouge", lat: 48.818471900073675, lon: 2.319523835754741 },
+    { name: "Porte d'Orléans", lat: 48.823394602620716, lon: 2.325623760353114 },
+    { name: "Alésia", lat: 48.82820106421924, lon: 2.3270932349484528 },
+    { name: "Mouton-Duvernet", lat: 48.83133758557153, lon: 2.329887640408421 },
+    { name: "Denfert-Rochereau", lat: 48.83392232305997, lon: 2.3321281604376116 },
+    { name: "Raspail", lat: 48.83910415024143, lon: 2.3307802165662403 },
+    { name: "Vavin", lat: 48.84205232329236, lon: 2.3288628540691043 },
+    { name: "Montparnasse Bienvenue", lat: 48.84385251452581, lon: 2.3243294607791096 },
+    { name: "Saint-Placide", lat: 48.84700665158937, lon: 2.327054815066312 },
+    { name: "Saint-Sulpice", lat: 48.85120862756671, lon: 2.330611953081543 },
+    { name: "Odéon", lat: 48.852175453081486, lon: 2.3395157696170745 },
+    { name: "Saint-Michel", lat: 48.85358493521485, lon: 2.343964657062377 },
+    { name: "Cité", lat: 48.85492106147581, lon: 2.347361051762225 },
+    { name: "Châtelet", lat: 48.85971581985686, lon: 2.3467600097151675 },
+    { name: "Les Halles", lat: 48.86252665962869, lon: 2.34600573656331 },
+    { name: "Etienne Marcel", lat: 48.86370301202431, lon: 2.3489761968791085 },
+    { name: "Réaumur - Sébastopol", lat: 48.86604305354321, lon: 2.352613903045621 },
+    { name: "Strasbourg - Saint-Denis", lat: 48.86966773787259, lon: 2.3543411093711257 },
+    { name: "Château d'Eau", lat: 48.87247308911766, lon: 2.3559014497805357 },
+    { name: "Gare de l'Est", lat: 48.876283511884786, lon: 2.3578981321043053 },
+    { name: "Gare du Nord", lat: 48.879510553130615, lon: 2.356768884572096 },
+    { name: "Barbès - Rochechouart", lat: 48.88342517173516, lon: 2.3497455480753806 },
+    { name: "Château Rouge", lat: 48.88707887746752, lon: 2.3493658080048405 },
+    { name: "Marcadet - Poissonniers", lat: 48.891280439844486, lon: 2.3496815417224775 },
+    { name: "Simplon", lat: 48.8938152613519, lon: 2.347794968187123 },
+    { name: "Porte de Clignancourt", lat: 48.897525631278015, lon: 2.344624099102791 }
+    ];
+
+  const trains = [];
+  const markers = {};
+
+  const trainIcon = L.icon({
+    iconUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/76/Paris_transit_icons_-_M%C3%A9tro_4.svg/250px-Paris_transit_icons_-_M%C3%A9tro_4.svg.png',
+    iconSize: [24, 24],
+    iconAnchor: [12, 12]
+  });
+
+  stations.forEach(st => {
+    L.circleMarker([st.lat, st.lon], {
+      radius: 4,
+      color: 'purple',
+      fillColor: 'purple',
+      fillOpacity: 1,
+    }).bindPopup(st.name).addTo(map);
+  });
+
+  L.polyline(stations.map(s => [s.lat, s.lon]), { color: 'purple', weight: 4 }).addTo(map);
+
+  function interpolatePosition(sta1, sta2, t1, t2, now) {
+    const start = new Date(t1).getTime();
+    const end = new Date(t2).getTime();
+    const current = now.getTime();
+    let ratio = (current - start) / (end - start);
+    ratio = Math.max(0, Math.min(1, ratio));
+    return {
+      lat: sta1.lat + (sta2.lat - sta1.lat) * ratio,
+      lon: sta1.lon + (sta2.lon - sta1.lon) * ratio
+    };
+  }
+
+  function updateTrainPositions() {
+    const now = new Date();
+
+    // Iterate over all trains and update their position
+    // For each train, find the indices of the previous and next stop in the list of stations
+    // If the previous stop is not found, use the next stop as the previous stop if it exists
+    // If the next stop is not found, do nothing
+
+    trains.forEach(train => {
+      let prevIndex = stations.findIndex(s => s.name === train.previous_stop);
+      let nextIndex = stations.findIndex(s => s.name === train.next_stop);
+
+      if (prevIndex < 0 && nextIndex >= 0) {
+        // If previous stop isn't included
+        // Guess previous stop
+        if (nextIndex > 0) {
+          prevIndex = nextIndex - 1; // Previous stop on the line
+          train.previous_arrival = new Date(
+            new Date(train.arrival_time).getTime() - 60 * 1000 // Estimated: 1 minute
+          ).toISOString();
+        } else {
+          // No station before = train is on the first stop
+          prevIndex = nextIndex;
+          train.previous_arrival = train.arrival_time;
+        }
+      }
+
+      if (nextIndex < 0 && prevIndex >= 0) {
+        if (prevIndex < stations.length - 1) {
+          nextIndex = prevIndex + 1; // Select next stop
+          train.arrival_time = new Date(
+            new Date(train.previous_arrival).getTime() + 60 * 1000 // Estimated: 1 minute
+          ).toISOString();
+        } else {
+          nextIndex = prevIndex; // End of line
+          train.arrival_time = train.previous_arrival;
+        }
+      }
+
+      if (prevIndex < 0 || nextIndex < 0) return;
+
+      const sta1 = stations[prevIndex];
+      const sta2 = stations[nextIndex];
+      if (!sta1 || !sta2) return;
+
+      const t1 = new Date(train.previous_arrival);
+      const t2 = new Date(train.arrival_time);
+      if (isNaN(t1) || isNaN(t2) || t1 >= t2) return;
+
+      const pos = interpolatePosition(sta1, sta2, t1, t2, now);
+
+      if (!markers[train.missioncode]) {
+        markers[train.missioncode] = L.marker([pos.lat, pos.lon], { icon: trainIcon }).addTo(map);
+      } else {
+        markers[train.missioncode].setLatLng([pos.lat, pos.lon]);
+      }
+    });
+
+    requestAnimationFrame(updateTrainPositions);
+  }
+
+  function updateTrainData(data) {
+    if (!data.trains) {
+        console.warn("JSON doesn’t contain 'trains' array");
+        return;
+    }
+
+    const status = document.getElementById('status');
+    if (data.last_update) {
+        const date = new Date(data.last_update);
+        status.textContent = `Dernière mise à jour : ${date.toLocaleTimeString()}`;
+    } else {
+        status.textContent = "Dernière mise à jour inconnue";
+    }
+
+    // Mise à jour / ajout des trains
+    data.trains.forEach(nt => {
+        let existing = trains.find(t => t.missioncode === nt.missioncode);
+        if (existing) {
+            Object.assign(existing, nt);
+        } else {
+            trains.push(nt);
+        }
+    });
+
+    const GRACE_PERIOD_MS = 90 * 1000; // 90 secondes
+
+    // Suppression uniquement si "last_seen" est trop vieux
+    const now = Date.now();
+    for (let i = trains.length - 1; i >= 0; i--) {
+        const t = trains[i];
+        const lastSeen = Date.parse(t.last_seen || data.last_update || now);
+        if (now - lastSeen > GRACE_PERIOD_MS) {
+            if (markers[t.missioncode]) {
+                map.removeLayer(markers[t.missioncode]);
+                delete markers[t.missioncode];
+            }
+            trains.splice(i, 1);
+        }
+    }
+  }
+
+
+  function fetchTrains() {
+    fetch('https://apitrafic.share.zrok.io/trafic/m04tempsreel', { headers: { 'skip_zrok_interstitial': 1 } })
+      .then(res => res.json())
+      .then(updateTrainData)
+      .catch(err => {
+        console.error("Erreur chargement trains", err);
+        document.getElementById('status').textContent = 'Erreur chargement données';
+      });
+  }
+
+  setInterval(fetchTrains, 10000);
+  fetchTrains();
+
+  updateTrainPositions();
+</script>
+
+</body>
+</html>

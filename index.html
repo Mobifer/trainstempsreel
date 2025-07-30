@@ -62,7 +62,7 @@
     { name: "Marcadet - Poissonniers", lat: 48.891280439844486, lon: 2.3496815417224775 },
     { name: "Simplon", lat: 48.8938152613519, lon: 2.347794968187123 },
     { name: "Porte de Clignancourt", lat: 48.897525631278015, lon: 2.344624099102791 }
-    ];
+  ];
 
   const trains = [];
   const markers = {};
@@ -108,6 +108,8 @@
       let prevIndex = stations.findIndex(s => s.name === train.previous_stop);
       let nextIndex = stations.findIndex(s => s.name === train.next_stop);
 
+      let missioncode = train.missioncode;
+
       // ^ If not found, the index will return -1
       // So we can make calculations based on indexes
 
@@ -115,7 +117,11 @@
         // If previous stop isn't included
         // Guess previous stop
         if (nextIndex > 0) {
-          prevIndex = nextIndex - 1; // Previous stop on the line
+          if (missioncode.includes('.A.')) {
+            prevIndex = nextIndex + 1;
+          } else {
+            prevIndex = nextIndex - 1;
+          }
           train.previous_arrival = new Date(
             new Date(train.arrival_time).getTime() - 60 * 1000 // Estimated: 1 minute
           ).toISOString();
@@ -128,7 +134,11 @@
 
       if (nextIndex < 0 && prevIndex >= 0) {
         if (prevIndex < stations.length - 1) {
-          nextIndex = prevIndex + 1; // Select next stop
+          if (missioncode.includes('.A.')) {
+            nextIndex = prevIndex + 1;
+          } else {
+            nextIndex = prevIndex - 1;
+          }
           train.arrival_time = new Date(
             new Date(train.previous_arrival).getTime() + 60 * 1000 // Estimated: 1 minute
           ).toISOString();

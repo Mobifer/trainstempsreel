@@ -210,8 +210,8 @@
 
 
   function fetchTrains() {
-    // fetch('https://apitrafic.share.zrok.io/trafic/m04tempsreel', { headers: { 'skip_zrok_interstitial': 1 } })
-    fetch('m04.json')
+    fetch('https://apitrafic.share.zrok.io/trafic/m04tempsreel', { headers: { 'skip_zrok_interstitial': 1 } })
+    //fetch('m04.json')
       .then(res => res.json())
       .then(updateTrainData)
       .catch(err => {

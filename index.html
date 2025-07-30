@@ -171,7 +171,13 @@
       if (!markers[train.missioncode]) {
         markers[train.missioncode] = L.marker([pos.lat, pos.lon], { icon: trainIcon }).addTo(map);
       } else {
-        markers[train.missioncode].setLatLng([pos.lat, pos.lon]);
+        // markers[train.missioncode].setLatLng([pos.lat, pos.lon]);
+        smoothMoveMarker(
+          markers[train.missioncode],
+          markers[train.missioncode].getLatLng(),
+          L.latLng(pos.lat, pos.lon),
+          800 // durée en ms
+        );
       }
     });
 
@@ -217,6 +223,18 @@
             trains.splice(i, 1);
         }
     }
+  }
+
+  function smoothMoveMarker(marker, fromLatLng, toLatLng, duration = 1000) {
+    const start = performance.now(); // Current time in milliseconds
+    function animate(time) {
+      const t = Math.min(1, (time - start) / duration);
+      const lat = fromLatLng.lat + (toLatLng.lat - fromLatLng.lat) * t;
+      const lng = fromLatLng.lng + (toLatLng.lng - fromLatLng.lng) * t;
+      marker.setLatLng([lat, lng]);
+      if (t < 1) requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
   }
 
 
